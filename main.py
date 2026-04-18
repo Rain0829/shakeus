@@ -6,7 +6,7 @@ from config import GOOGLE_HOME_IP, SONGS_BASE_URL, SONGS
 from audio.speaker import Speaker
 from audio.song_server import register_routes
 from alarm.alarm_loop import run_alarm
-from audio.voice_gen import VoiceGenerator
+from audio.voice_generator import VoiceGenerator
 
 app = Flask(__name__)
 register_routes(app)   # mounts /songs/* routes
@@ -14,14 +14,14 @@ register_routes(app)   # mounts /songs/* routes
 def run_full_sequence(speaker, song_url, pose_label, song_name):
     """Wraps the AI Intro, the main alarm, and the AI Outro together."""
     print("Generating AI DJ Intro and Outro...")
-    voice_gen = VoiceGenerator()
+    voice_generator = VoiceGenerator()
 
     # 1. Generate the audio files
-    intro_text = voice_gen.generate_phrase("intro")
-    voice_gen.create_tts_audio(intro_text, "current_intro.mp3")
+    intro_text = voice_generator.generate_phrase("intro")
+    voice_generator.create_tts_audio(intro_text, "current_intro.mp3")
 
-    outro_text = voice_gen.generate_phrase("outro")
-    voice_gen.create_tts_audio(outro_text, "current_outro.mp3")
+    outro_text = voice_generator.generate_phrase("outro")
+    voice_generator.create_tts_audio(outro_text, "current_outro.mp3")
 
     # 2. Play Intro
     # We use your existing SONGS_BASE_URL assuming the audio folder is served there
