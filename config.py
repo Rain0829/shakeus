@@ -13,8 +13,6 @@ WEBCAM_INDEX = 0                 # 0 = built-in/first USB webcam
 
 # ── Audio ────────────────────────────────────────────────────────────────────
 SONGS_DIR = "assets/songs"
-SONGS_BASE_URL = f"http://{MAC_IP}:{MAC_PORT}/songs"  # Google Home fetches from here
-
 # Songs: pose_label=None → any dancing clears alarm
 #        pose_label="x"  → must hold that ML-classified pose
 SONGS = [
@@ -49,4 +47,5 @@ GEMINI_API_KEY = "AIzaSyA24bgSPtFMIQOFJidgIFTtEngYAbNuSo4"
 ELEVENLABS_API_KEY = "sk_f940f6c218c43c9bba0e003c306240ea66204e921cfbb270" 
 ELEVENLABS_VOICE_ID = "gJx1vCzNCD1EQHT212Ls" 
 GOOGLE_HOME_IP = "192.168.137.143" 
-SONGS_BASE_URL = "https://10.29.150.120/songs"
+SONGS_BASE_URL = "http://192.168.137.1:5050/songs"
+#SONGS_BASE_URL = "https://10.29.150.120/songs"
