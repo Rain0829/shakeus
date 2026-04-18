@@ -21,6 +21,7 @@ SONGS = [
     {"name": "Woah",          "file": "woah.mp3",          "pose_label": None},
     {"name": "Lush Life",     "file": "lush_life.mp3",     "pose_label": None},
     {"name": "Gangnam Style", "file": "gangnam_style.mp3", "pose_label": None},
+    {"name": "Whip",          "file": "whip.mp3",          "pose_label": None}
 ]
 
 # ── Detection model paths (Person B's trained files) ─────────────────────────
@@ -35,3 +36,9 @@ REQUIRED_TIME      = 10     # seconds per attempt before pass/fail
 POSE_CONFIDENCE    = 0.7    # classifier confidence needed to count a pose hit
 POSE_HOLD_NEEDED   = 2.0    # seconds of correct pose needed to dismiss (pose mode)
 COUNTDOWN_SECS     = 3      # countdown before dancing phase begins
+
+
+# EARVIN's GEMINI API and ELEVEN LABS API
+GEMINI_API_KEY = "your_gemini_api_key_here"
+ELEVENLABS_API_KEY = "your_elevenlabs_api_key_here"
+ELEVENLABS_VOICE_ID = "your_chosen_voice_id_here"
