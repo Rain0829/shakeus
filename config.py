@@ -45,6 +45,8 @@ POSE_HOLD_NEEDED   = 2.0
 COUNTDOWN_SECS     = 3
 
 # ── AI Voice (Earvin) ─────────────────────────────────────────────────────────
-GEMINI_API_KEY      = "your_gemini_api_key_here"
-ELEVENLABS_API_KEY  = "your_elevenlabs_api_key_here"
-ELEVENLABS_VOICE_ID = "your_chosen_voice_id_here"
+GEMINI_API_KEY = "AIzaSyA24bgSPtFMIQOFJidgIFTtEngYAbNuSo4" 
+ELEVENLABS_API_KEY = "sk_f940f6c218c43c9bba0e003c306240ea66204e921cfbb270" 
+ELEVENLABS_VOICE_ID = "gJx1vCzNCD1EQHT212Ls" 
+GOOGLE_HOME_IP = "192.168.137.143" 
+SONGS_BASE_URL = "https://10.29.150.120/songs"
