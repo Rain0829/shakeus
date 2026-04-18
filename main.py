@@ -6,7 +6,7 @@ from config import GOOGLE_HOME_IP, SONGS_BASE_URL, SONGS
 from audio.speaker import Speaker
 from audio.song_server import register_routes
 from alarm.alarm_loop import run_alarm
-from audio.voice_generator import VoiceGenerator
+from audio.voice_gen import VoiceGenerator
 
 app = Flask(__name__)
 register_routes(app)   # mounts /songs/* routes
