@@ -8,3 +8,5 @@ scikit-learn
 numpy
 google-generativeai
 requests
+fastapi
+uvicorn

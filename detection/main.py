@@ -27,8 +27,9 @@ sys.path.insert(0, ".")
 from config import (
     MODEL_PATH, CLASSIFIER_PATH, WEBCAM_INDEX,
     MOVEMENT_THRESHOLD, JOINTS_NEEDED, SCORE_THRESHOLD,
-    REQUIRED_TIME, POSE_CONFIDENCE, POSE_HOLD_NEEDED,
+    REQUIRED_TIME, POSE_CONFIDENCE, POSE_HOLD_NEEDED, POSE_GRACE_SECS,
     COUNTDOWN_SECS, SONGS, SONGS_DIR,
+    DYN_WINDOW, DYN_BURSTS_NEEDED, DYN_BURST_THRESHOLD,
 )
 
 # ─────────────────────────────────────────
@@ -36,11 +37,6 @@ from config import (
 # ─────────────────────────────────────────
 FAIL_DISPLAY_SECS = 2
 PASS_DISPLAY_SECS = 3
-
-# Dynamic mode constants (low_cortisol)
-DYN_WINDOW          = 2.0   # rolling window in seconds
-DYN_BURSTS_NEEDED   = 3     # wrist bursts needed inside the window
-DYN_BURST_THRESHOLD = 0.04  # min wrist displacement per frame to count as a burst
 
 # ─────────────────────────────────────────
 #  MODE INFERENCE

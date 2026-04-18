@@ -2,7 +2,7 @@ import cv2
 import time
 from config import (
     WEBCAM_INDEX, REQUIRED_TIME, SCORE_THRESHOLD,
-    POSE_CONFIDENCE, POSE_HOLD_NEEDED, COUNTDOWN_SECS,
+    POSE_CONFIDENCE, POSE_HOLD_NEEDED, POSE_GRACE_SECS, COUNTDOWN_SECS,
 )
 from detection.pose import PoseDetector
 from detection.classifier import PoseClassifier
@@ -74,7 +74,6 @@ def run_alarm(speaker, song_url: str, pose_label=None, song_name=""):
 
                 if pose_label:
                     # Pose mode: hold the correct pose for POSE_HOLD_NEEDED seconds
-                    POSE_GRACE_SECS = 0.3  # tolerate brief misses without resetting
                     correct = (
                         pose_detected
                         and predicted_label == pose_label

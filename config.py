@@ -1,7 +1,7 @@
 # ── Network ──────────────────────────────────────────────────────────────────
 # On Mac:  ipconfig getifaddr en0
 # On Pi:   hostname -I
-MAC_IP         = "192.168.1.x"
+MAC_IP         = "192.168.137.143"
 MAC_PORT       = 5050
 GOOGLE_HOME_IP = "192.168.137.143"
 
@@ -12,7 +12,9 @@ ALARM_TIME = "07:30"             # 24hr format HH:MM
 WEBCAM_INDEX = 0                 # 0 = built-in/first USB webcam
 
 # ── Audio ────────────────────────────────────────────────────────────────────
-SONGS_DIR = "assets/songs"
+SONGS_DIR      = "assets/songs"
+SONGS_BASE_URL = f"http://{MAC_IP}:{MAC_PORT}/songs"
+
 # Songs: pose_label=None → any dancing clears alarm
 #        pose_label="x"  → must hold that ML-classified pose
 SONGS = [
@@ -33,19 +35,22 @@ MODEL_PATH      = (
 )
 CLASSIFIER_PATH = "detection/pose_classifier.pkl"
 
-# ── Dance detection thresholds (Person B tunes these) ────────────────────────
-MOVEMENT_THRESHOLD = 0.02
-JOINTS_NEEDED      = 3
-SCORE_THRESHOLD    = 3.0
-REQUIRED_TIME      = 10
-POSE_CONFIDENCE    = 0.7
-POSE_HOLD_NEEDED   = 2.0
-COUNTDOWN_SECS     = 3
+# ── Dance detection thresholds ────────────────────────────────────────────────
+MOVEMENT_THRESHOLD = 0.02   # min joint displacement per frame to count as movement
+JOINTS_NEEDED      = 3      # how many joints must move per frame to score
+SCORE_THRESHOLD    = 3.0    # seconds of movement needed to pass (movement mode)
+REQUIRED_TIME      = 10     # seconds per attempt before pass/fail
+POSE_CONFIDENCE    = 0.7    # classifier confidence needed to count a pose hit
+POSE_HOLD_NEEDED   = 2.0    # seconds of correct pose needed to dismiss (pose mode)
+POSE_GRACE_SECS    = 0.3    # seconds of bad frames tolerated before hold resets
+COUNTDOWN_SECS     = 3      # countdown before dancing phase begins
 
-# ── AI Voice (Earvin) ─────────────────────────────────────────────────────────
-GEMINI_API_KEY = "AIzaSyA24bgSPtFMIQOFJidgIFTtEngYAbNuSo4" 
-ELEVENLABS_API_KEY = "sk_f940f6c218c43c9bba0e003c306240ea66204e921cfbb270" 
-ELEVENLABS_VOICE_ID = "gJx1vCzNCD1EQHT212Ls" 
-GOOGLE_HOME_IP = "192.168.137.143" 
-SONGS_BASE_URL = "http://192.168.137.1:5050/songs"
-#SONGS_BASE_URL = "https://10.29.150.120/songs"
+# ── Dynamic mode (wrist burst detection) ─────────────────────────────────────
+DYN_WINDOW          = 2.0   # rolling window in seconds
+DYN_BURSTS_NEEDED   = 3     # wrist bursts needed inside the window
+DYN_BURST_THRESHOLD = 0.04  # min wrist displacement per frame to count as a burst
+
+# ── AI Voice ─────────────────────────────────────────────────────────────────
+GEMINI_API_KEY      = "AIzaSyA24bgSPtFMIQOFJidgIFTtEngYAbNuSo4"
+ELEVENLABS_API_KEY  = "sk_f940f6c218c43c9bba0e003c306240ea66204e921cfbb270"
+ELEVENLABS_VOICE_ID = "gJx1vCzNCD1EQHT212Ls"
