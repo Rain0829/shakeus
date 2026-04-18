@@ -22,11 +22,11 @@ USE_CHROMECAST = False
 #        pose_label="x"  → must hold that ML-classified pose
 SONGS = [
     {"name": "Gangnam Style", "file": "gangnam_style.mp3", "pose_label": 'gangnam_style'},
-#     {"name": "Scuba",         "file": "scuba.mp3",         "pose_label": None},
-#     {"name": "Low Cortisol",  "file": "low_cortisol.mp3",  "pose_label": None},
-#     {"name": "Woah",          "file": "woah.mp3",          "pose_label": None},
-#     {"name": "Lush Life",     "file": "lush_life.mp3",     "pose_label": None},
-#     {"name": "Whip",          "file": "whip.mp3",          "pose_label": None},
+    {"name": "Scuba",         "file": "scuba.mp3",         "pose_label": None},
+    {"name": "Low Cortisol",  "file": "low_cortisol.mp3",  "pose_label": None},
+    {"name": "Woah",          "file": "woah.mp3",          "pose_label": None},
+    {"name": "Lush Life",     "file": "lush_life.mp3",     "pose_label": None},
+    {"name": "Whip",          "file": "whip.mp3",          "pose_label": None},
  ]
 
 # ── Detection model ───────────────────────────────────────────────────────────
