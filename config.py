@@ -12,7 +12,7 @@ ALARM_TIME = "07:30"             # 24hr format HH:MM
 WEBCAM_INDEX = 0                 # 0 = built-in/first USB webcam
 
 # ── Audio ────────────────────────────────────────────────────────────────────
-SONGS_DIR      = "assets/songs"
+SONGS_DIR = "assets/songs"
 SONGS_BASE_URL = f"http://{MAC_IP}:{MAC_PORT}/songs"  # Google Home fetches from here
 
 # Songs: pose_label=None → any dancing clears alarm
