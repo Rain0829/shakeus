@@ -9,6 +9,8 @@ Modes are inferred from config.py SONGS list:
   pose_label = None            → general movement (any dancing clears alarm)
   pose_label = "low_cortisol" → dynamic mode (wrist burst detection)
   pose_label = anything else  → static mode (hold that ML pose for N seconds)
+
+In ALL modes, the user must dance for the full REQUIRED_TIME before pass/fail.
 """
 
 import cv2
@@ -41,10 +43,9 @@ PASS_DISPLAY_SECS = 3
 # ─────────────────────────────────────────
 #  MODE INFERENCE
 # ─────────────────────────────────────────
-DYNAMIC_LABELS = {"low_cortisol"}   # add more dynamic poses here if needed
+DYNAMIC_LABELS = {"low_cortisol"}
 
 def get_mode(song):
-    """Infer detection mode from pose_label."""
     lbl = song.get("pose_label")
     if lbl is None:
         return "movement"
@@ -124,7 +125,6 @@ pygame.mixer.init()
 def play_song(song):
     path = os.path.join(SONGS_DIR, song["file"])
     if not os.path.exists(path):
-        # fall back to any available MP3 in the folder
         available = [f for f in os.listdir(SONGS_DIR) if f.endswith(".mp3")]
         if not available:
             print(f"WARNING: no MP3 files found in {SONGS_DIR}/ — music skipped")
@@ -156,19 +156,23 @@ cap_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
 #  STATE
 # ─────────────────────────────────────────
 state = {
-    "phase":           "waiting",
-    "phase_start":     None,
-    "score":           0.0,
-    "prev_positions":  {},
-    "result":          None,
-    "attempt":         0,
-    "alarm_cleared":   False,
+    "phase":            "waiting",
+    "phase_start":      None,
+    "score":            0.0,
+    "prev_positions":   {},
+    "result":           None,
+    "attempt":          0,
+    "alarm_cleared":    False,
     # static mode
-    "pose_hold_start": None,
-    "pose_hold_secs":  0.0,
+    "pose_hold_start":  None,
+    "pose_hold_secs":   0.0,
+    "pose_best_hold":   0.0,   # best hold achieved this attempt
+    "grace_start":      None,  # when a grace period started
+    "pose_complete":    False, # True once hold bar has been filled
     # dynamic mode
-    "burst_times":     [],
-    "prev_wrists":     None,
+    "burst_times":      [],
+    "prev_wrists":      None,
+    "dyn_complete":     False, # True once burst target hit
 }
 
 # ─────────────────────────────────────────
@@ -194,6 +198,17 @@ def score_bar(img, score, threshold, x, y, bar_w=300, bar_h=22):
     shadow(img, f"{int(100*score/threshold)}%",
            (x+bar_w+8, y+bar_h-4), 0.55, (255,255,255), 1)
 
+def time_bar(img, elapsed, required, x, y, bar_w=300, bar_h=22):
+    """Shows overall time progress — always counts up to REQUIRED_TIME."""
+    fill  = int(bar_w * min(elapsed / required, 1.0))
+    color = (0, 200, 255)
+    cv2.rectangle(img, (x, y), (x+bar_w, y+bar_h), (50,50,50), -1)
+    if fill > 0:
+        cv2.rectangle(img, (x, y), (x+fill, y+bar_h), color, -1)
+    cv2.rectangle(img, (x, y), (x+bar_w, y+bar_h), (180,180,180), 1)
+    time_left = max(0.0, required - elapsed)
+    shadow(img, f"{time_left:.1f}s", (x+bar_w+8, y+bar_h-4), 0.55, (255,255,255), 1)
+
 def draw_landmarks(img, landmarks, h, w):
     pts = {}
     for name, idx in KEYPOINTS.items():
@@ -213,8 +228,12 @@ def start_countdown(s, now):
     s["result"]          = None
     s["pose_hold_start"] = None
     s["pose_hold_secs"]  = 0.0
+    s["pose_best_hold"]  = 0.0
+    s["grace_start"]     = None
+    s["pose_complete"]   = False
     s["burst_times"]     = []
     s["prev_wrists"]     = None
+    s["dyn_complete"]    = False
 
 def update_dynamic(s, landmarks, now):
     """Track wrist movement bursts over a rolling time window."""
@@ -293,31 +312,57 @@ with PoseLandmarker.create_from_options(options) as landmarker:
                     and predicted_label == current_song["pose_label"]
                     and pred_confidence >= POSE_CONFIDENCE
                 )
+
                 if correct:
+                    # Good frame — clear any grace period
+                    s["grace_start"] = None
                     if s["pose_hold_start"] is None:
                         s["pose_hold_start"] = now
                     s["pose_hold_secs"] = now - s["pose_hold_start"]
+                    s["pose_best_hold"] = max(s["pose_best_hold"], s["pose_hold_secs"])
+                    if s["pose_hold_secs"] >= POSE_HOLD_NEEDED:
+                        s["pose_complete"] = True
                 else:
-                    s["pose_hold_start"] = None
-                    s["pose_hold_secs"]  = 0.0
+                    # Bad frame — start or continue grace period
+                    if s["pose_hold_start"] is not None:
+                        if s["grace_start"] is None:
+                            s["grace_start"] = now
+                        elif now - s["grace_start"] > POSE_GRACE_SECS:
+                            # Grace expired — reset hold
+                            s["pose_hold_start"] = None
+                            s["pose_hold_secs"]  = 0.0
+                            s["grace_start"]     = None
+                    else:
+                        s["pose_hold_secs"] = 0.0
+
                 s["score"] = s["pose_hold_secs"]
 
-                if s["score"] >= POSE_HOLD_NEEDED:
-                    s["result"] = "pass"; s["phase"] = "result"; s["phase_start"] = now
-                elif elapsed >= REQUIRED_TIME:
-                    s["attempt"] += 1
-                    s["result"] = "fail"; s["phase"] = "result"; s["phase_start"] = now
+                # Only pass/fail once REQUIRED_TIME is up
+                if elapsed >= REQUIRED_TIME:
+                    if s["pose_complete"]:
+                        s["result"] = "pass"
+                    else:
+                        s["attempt"] += 1
+                        s["result"] = "fail"
+                    s["phase"]       = "result"
+                    s["phase_start"] = now
 
             # ── DYNAMIC: repeated arm/wrist movement ──────────────────────
             elif current_mode == "dynamic":
                 burst_count = update_dynamic(s, landmarks, now) if pose_detected else len(s["burst_times"])
                 s["score"] = burst_count
-
                 if burst_count >= DYN_BURSTS_NEEDED:
-                    s["result"] = "pass"; s["phase"] = "result"; s["phase_start"] = now
-                elif elapsed >= REQUIRED_TIME:
-                    s["attempt"] += 1
-                    s["result"] = "fail"; s["phase"] = "result"; s["phase_start"] = now
+                    s["dyn_complete"] = True
+
+                # Only pass/fail once REQUIRED_TIME is up
+                if elapsed >= REQUIRED_TIME:
+                    if s["dyn_complete"]:
+                        s["result"] = "pass"
+                    else:
+                        s["attempt"] += 1
+                        s["result"] = "fail"
+                    s["phase"]       = "result"
+                    s["phase_start"] = now
 
             # ── MOVEMENT: any general dancing ─────────────────────────────
             else:
@@ -335,10 +380,12 @@ with PoseLandmarker.create_from_options(options) as landmarker:
 
                 if elapsed >= REQUIRED_TIME:
                     if s["score"] >= SCORE_THRESHOLD:
-                        s["result"] = "pass"; s["phase"] = "result"; s["phase_start"] = now
+                        s["result"] = "pass"
                     else:
                         s["attempt"] += 1
-                        s["result"] = "fail"; s["phase"] = "result"; s["phase_start"] = now
+                        s["result"] = "fail"
+                    s["phase"]       = "result"
+                    s["phase_start"] = now
 
         elif s["phase"] == "result":
             if s["result"] == "pass":
@@ -382,36 +429,45 @@ with PoseLandmarker.create_from_options(options) as landmarker:
                    (w//2 - 40, h//2 + 70), 3.5, (0,220,255), 4)
 
         elif s["phase"] == "dancing":
-            elapsed   = now - s["phase_start"]
-            time_left = max(0.0, REQUIRED_TIME - elapsed)
+            elapsed = now - s["phase_start"]
 
             shadow(frame, "ALARM ON", (20, 38), 0.8, (0,60,255), 2)
             if s["attempt"] > 0:
                 shadow(frame, f"attempt {s['attempt']+1}", (180, 38), 0.65, (200,150,0), 1)
-            shadow(frame, f"Time left: {time_left:.1f}s", (20, 68), 0.9, (0,220,255))
+
+            # Time bar always visible across all modes
+            shadow(frame, "Time", (20, 68), 0.65, (200,200,200), 1)
+            time_bar(frame, elapsed, REQUIRED_TIME, 20, 76)
 
             if current_mode == "static":
-                shadow(frame, f"Hold the {current_song['pose_label'].replace('_',' ').upper()} pose!",
-                       (20, 100), 0.75, (255,220,0), 2)
-                score_bar(frame, s["pose_hold_secs"], POSE_HOLD_NEEDED, 20, 112)
+                # Show pose hold bar
+                pose_color = (0, 220, 80) if s["pose_complete"] else (255, 220, 0)
+                label_text = "POSE DONE! Keep dancing!" if s["pose_complete"] else \
+                             f"Hold the {current_song['pose_label'].replace('_',' ').upper()} pose!"
+                shadow(frame, label_text, (20, 115), 0.75, pose_color, 2)
+                score_bar(frame, s["pose_hold_secs"] if not s["pose_complete"] else POSE_HOLD_NEEDED,
+                          POSE_HOLD_NEEDED, 20, 128)
                 if pose_detected:
                     col = (0,220,80) if predicted_label == current_song["pose_label"] else (0,60,255)
                     shadow(frame, f"Detected: {predicted_label} ({pred_confidence:.0%})",
-                           (20, 152), 0.65, col, 1)
+                           (20, 168), 0.65, col, 1)
 
             elif current_mode == "dynamic":
                 burst_count = len(s["burst_times"])
-                shadow(frame, "Move your arms to the beat!",
-                       (20, 100), 0.75, (255,220,0), 2)
-                score_bar(frame, burst_count, DYN_BURSTS_NEEDED, 20, 112)
+                dyn_color = (0, 220, 80) if s["dyn_complete"] else (255, 220, 0)
+                label_text = "MOVE DONE! Keep dancing!" if s["dyn_complete"] else \
+                             "Move your arms to the beat!"
+                shadow(frame, label_text, (20, 115), 0.75, dyn_color, 2)
+                score_bar(frame, min(burst_count, DYN_BURSTS_NEEDED),
+                          DYN_BURSTS_NEEDED, 20, 128)
                 shadow(frame, f"Arm bursts: {burst_count}/{DYN_BURSTS_NEEDED}",
-                       (20, 152), 0.65, (0,220,255), 1)
+                       (20, 168), 0.65, (0,220,255), 1)
                 if burst_count < 1:
                     shadow(frame, "MOVE YOUR ARMS!", (w//2 - 155, h - 70), 1.2, (0,60,255), 3)
 
             else:
-                shadow(frame, "Score", (20, 100), 0.65, (200,200,200), 1)
-                score_bar(frame, s["score"], SCORE_THRESHOLD, 20, 108)
+                shadow(frame, "Score", (20, 115), 0.65, (200,200,200), 1)
+                score_bar(frame, s["score"], SCORE_THRESHOLD, 20, 123)
                 if s["score"] < SCORE_THRESHOLD * 0.4:
                     shadow(frame, "DANCE HARDER!", (w//2 - 155, h - 70), 1.3, (0,60,255), 3)
 
@@ -427,11 +483,11 @@ with PoseLandmarker.create_from_options(options) as landmarker:
                 shadow(frame, "NOT ENOUGH — TRY AGAIN!",
                        (w//2-295, h//2+15), 1.6, (0,60,255), 4)
                 if current_mode == "static":
-                    shadow(frame, f"Hold the pose for {POSE_HOLD_NEEDED:.0f}s",
-                           (w//2-180, h//2+65), 0.75, (200,200,200), 2)
+                    shadow(frame, "Hold the pose long enough within the 10s!",
+                           (w//2-240, h//2+65), 0.75, (200,200,200), 2)
                 elif current_mode == "dynamic":
-                    shadow(frame, f"Keep moving! Need {DYN_BURSTS_NEEDED} arm bursts in {DYN_WINDOW:.0f}s",
-                           (w//2-250, h//2+65), 0.75, (200,200,200), 2)
+                    shadow(frame, f"Need {DYN_BURSTS_NEEDED} arm bursts within the 10s!",
+                           (w//2-230, h//2+65), 0.75, (200,200,200), 2)
                 else:
                     shadow(frame, f"Score: {s['score']:.2f} / {SCORE_THRESHOLD:.1f} needed",
                            (w//2-200, h//2+65), 0.85, (200,200,200), 2)

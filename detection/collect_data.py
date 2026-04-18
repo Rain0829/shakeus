@@ -26,13 +26,11 @@ import time
 #  Key 1 = first label, key 2 = second, etc.
 # ─────────────────────────────────────────
 LABELS = [
-    "other",    # key 1 — normal movement / not a pose
-    "scuba",    # key 2 — the Scuba pose
-    "low_cortisol", # key 3
-    "gangnam_style",  #4
+    "other", #1
+    "gangnam_style",  #2
 ]
 
-OUTPUT_CSV  = "pose_data.csv"
+OUTPUT_CSV  = "detection/pose_data.csv"
 MODEL_PATH  = "pose_landmarker_full.task"
 SAMPLES_PER_LABEL_GOAL = 200   # suggested minimum per label
 
