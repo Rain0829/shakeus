@@ -11,7 +11,7 @@ class PoseClassifier:
             saved = pickle.load(f)
         self._clf = saved["classifier"]
         self._enc = saved["label_encoder"]
-        self.labels = list(self._enc.classes_)
+        self.labels = [str(c) for c in self._enc.classes_]
         print(f"Classifier loaded. Labels: {self.labels}")
 
     @staticmethod
@@ -33,4 +33,4 @@ class PoseClassifier:
         row   = self._normalize(landmarks)
         probs = self._clf.predict_proba([row])[0]
         idx   = int(np.argmax(probs))
-        return self._enc.classes_[idx], float(probs[idx])
+        return str(self._enc.classes_[idx]), float(probs[idx])

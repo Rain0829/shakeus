@@ -1,48 +1,46 @@
-# audio/voice_generator.py
-import google.generativeai as genai
 import requests
 import os
+from google import genai
 from config import GEMINI_API_KEY, ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID, SONGS_DIR
+
 
 class VoiceGenerator:
     def __init__(self):
-        genai.configure(api_key=GEMINI_API_KEY)
-        # Using 1.5-flash as it is exceptionally fast for simple text tasks
-        self.model = genai.GenerativeModel('gemini-1.5-flash') 
+        self.client = genai.Client(api_key=GEMINI_API_KEY)
 
     def generate_phrase(self, phase="intro"):
-        """Uses Gemini to generate a random hype phrase."""
         if phase == "intro":
             prompt = "Write a short, punchy 1-sentence intro to wake someone up and hype them up for a morning dance routine. Sound like an energetic DJ. No emojis."
         else:
             prompt = "Write a short, punchy 1-sentence congratulation for finishing a morning dance break. Tell them to have a great day. No emojis."
-        
-        response = self.model.generate_content(prompt)
+
+        response = self.client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt,
+        )
         return response.text.strip()
 
     def create_tts_audio(self, text, output_filename):
-        """Sends the text to ElevenLabs and saves the MP3."""
         url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}"
         headers = {
             "xi-api-key": ELEVENLABS_API_KEY,
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
         data = {
             "text": text,
-            "model_id": "eleven_monolingual_v1",
+            "model_id": "eleven_multilingual_v2",
             "voice_settings": {
                 "stability": 0.5,
-                "similarity_boost": 0.75
-            }
+                "similarity_boost": 0.75,
+            },
         }
-        
+
         response = requests.post(url, json=data, headers=headers)
-        
+
         if response.status_code == 200:
-            # Save into SONGS_DIR so song_server.py can serve it over HTTP
             filepath = os.path.join(SONGS_DIR, output_filename)
-            with open(filepath, 'wb') as f:
+            with open(filepath, "wb") as f:
                 f.write(response.content)
             return filepath
         else:
-            raise Exception(f"ElevenLabs API Error: {response.text}")
+            raise Exception(f"ElevenLabs API error {response.status_code}: {response.text}")

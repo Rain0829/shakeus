@@ -1,4 +1,21 @@
-import requests, sys
+import sys
+from pathlib import Path
+
+import requests
+
+
+def _prefer_local_config() -> None:
+    """Ensure direct script runs resolve this project's config.py first."""
+    here = Path(__file__).resolve().parent
+    for candidate in (here, here.parent):
+        if (candidate / "config.py").exists():
+            candidate_str = str(candidate)
+            if candidate_str not in sys.path:
+                sys.path.insert(0, candidate_str)
+            return
+
+
+_prefer_local_config()
 from config import MAC_IP, MAC_PORT
 
 def trigger_now():

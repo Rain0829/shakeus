@@ -9,11 +9,14 @@ GOOGLE_HOME_IP = "192.168.137.143"
 ALARM_TIME = "07:30"             # 24hr format HH:MM
 
 # ── Camera ───────────────────────────────────────────────────────────────────
-WEBCAM_INDEX = 0                 # 0 = built-in/first USB webcam
+WEBCAM_INDEX = 0                 # 0 = built-in Mac / first USB on Pi
 
 # ── Audio ────────────────────────────────────────────────────────────────────
 SONGS_DIR      = "assets/songs"
-SONGS_BASE_URL = f"http://{MAC_IP}:{MAC_PORT}/songs"
+SONGS_BASE_URL = f"http://{MAC_IP}:8000/songs"  # stream.py serves songs here
+
+# Set True on Pi to cast audio to Google Home; False plays locally via pygame
+USE_CHROMECAST = False
 
 # Songs: pose_label=None → any dancing clears alarm
 #        pose_label="x"  → must hold that ML-classified pose
@@ -53,4 +56,4 @@ DYN_BURST_THRESHOLD = 0.04  # min wrist displacement per frame to count as a bur
 # ── AI Voice ─────────────────────────────────────────────────────────────────
 GEMINI_API_KEY      = "AIzaSyA24bgSPtFMIQOFJidgIFTtEngYAbNuSo4"
 ELEVENLABS_API_KEY  = "sk_f940f6c218c43c9bba0e003c306240ea66204e921cfbb270"
-ELEVENLABS_VOICE_ID = "gJx1vCzNCD1EQHT212Ls"
+ELEVENLABS_VOICE_ID = "EXAVITQu4vr4xnSDxMaL"

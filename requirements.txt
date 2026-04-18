@@ -1,4 +1,4 @@
-opencv-python
+opencv-python-headless
 mediapipe
 flask
 pychromecast
@@ -6,6 +6,6 @@ schedule
 pygame
 scikit-learn
 numpy
-google-generativeai
+google-genai
 fastapi
 uvicorn

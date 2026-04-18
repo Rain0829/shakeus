@@ -63,13 +63,14 @@ pip3 install -r pi_requirements.txt
 
 crontab -e
 # Add this line:
-@reboot python3 /home/pi/tiktok-alarm/scheduler.py &
+@reboot cd /home/pi/tiktok-alarm && python3 scheduler.py &
 ```
 
 Run manually on the Pi:
 
 ```bash
-python3 alarm/scheduler.py
+cd /home/pi/tiktok-alarm
+python3 scheduler.py
 ```
 
 ---
