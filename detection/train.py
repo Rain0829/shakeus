@@ -17,8 +17,8 @@ from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import classification_report, confusion_matrix
 
-INPUT_CSV    = "pose_data.csv"
-OUTPUT_MODEL = "pose_classifier.pkl"
+INPUT_CSV    = "detection/pose_data.csv"
+OUTPUT_MODEL = "detection/pose_classifier.pkl"
 
 # ─────────────────────────────────────────
 #  LOAD DATA
