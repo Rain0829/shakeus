@@ -28,7 +28,8 @@ import time
 LABELS = [
     "other",    # key 1 — normal movement / not a pose
     "scuba",    # key 2 — the Scuba pose
-    "low_cortisol",  # key 3
+    "low_cortisol", # key 3
+    "gangnam_style",  #4
 ]
 
 OUTPUT_CSV  = "pose_data.csv"
