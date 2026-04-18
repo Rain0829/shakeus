@@ -2,7 +2,7 @@ import threading
 import random
 import time
 from flask import Flask
-from config import GOOGLE_HOME_IP, SONGS_BASE_URL, SONGS
+from config. import GOOGLE_HOME_IP, SONGS_BASE_URL, SONGS
 from audio.speaker import Speaker
 from audio.song_server import register_routes
 from alarm.alarm_loop import run_alarm

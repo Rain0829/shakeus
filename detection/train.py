@@ -20,6 +20,21 @@ from sklearn.metrics import classification_report, confusion_matrix
 INPUT_CSV    = "detection/pose_data.csv"
 OUTPUT_MODEL = "detection/pose_classifier.pkl"
 
+
+def normalize_row(raw):
+    """Hip-centered, shoulder-width-scaled. Matches classifier.py inference."""
+    # landmarks are stored as flat [x0,y0,z0, x1,y1,z1, ...]
+    hip_x = (raw[23*3] + raw[24*3]) / 2
+    hip_y = (raw[23*3+1] + raw[24*3+1]) / 2
+    scale = abs(raw[11*3] - raw[12*3]) + 1e-6
+    out = []
+    for i in range(33):
+        out.append((raw[i*3]   - hip_x) / scale)
+        out.append((raw[i*3+1] - hip_y) / scale)
+        out.append(raw[i*3+2])
+    return out
+
+
 # ─────────────────────────────────────────
 #  LOAD DATA
 # ─────────────────────────────────────────
@@ -29,8 +44,8 @@ X, y = [], []
 with open(INPUT_CSV) as f:
     reader = csv.DictReader(f)
     for row in reader:
-        features = [float(row[col]) for col in reader.fieldnames if col != "label"]
-        X.append(features)
+        raw = [float(row[col]) for col in reader.fieldnames if col != "label"]
+        X.append(normalize_row(raw))
         y.append(row["label"])
 
 X = np.array(X)

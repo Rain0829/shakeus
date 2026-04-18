@@ -24,12 +24,13 @@ def run_alarm(speaker, song_url: str, pose_label=None, song_name=""):
         clf = PoseClassifier() if pose_label else None
 
         state = {
-            "phase":           "waiting",
-            "phase_start":     None,
-            "score":           0.0,
-            "prev_positions":  {},
-            "attempt":         0,
-            "pose_hold_start": None,
+            "phase":            "waiting",
+            "phase_start":      None,
+            "score":            0.0,
+            "prev_positions":   {},
+            "attempt":          0,
+            "pose_hold_start":  None,
+            "last_correct_time": None,
         }
 
         while True:
@@ -73,6 +74,7 @@ def run_alarm(speaker, song_url: str, pose_label=None, song_name=""):
 
                 if pose_label:
                     # Pose mode: hold the correct pose for POSE_HOLD_NEEDED seconds
+                    POSE_GRACE_SECS = 0.3  # tolerate brief misses without resetting
                     correct = (
                         pose_detected
                         and predicted_label == pose_label
@@ -81,17 +83,22 @@ def run_alarm(speaker, song_url: str, pose_label=None, song_name=""):
                     if correct:
                         if s["pose_hold_start"] is None:
                             s["pose_hold_start"] = now
+                        s["last_correct_time"] = now
                         s["score"] = now - s["pose_hold_start"]
                     else:
-                        s["pose_hold_start"] = None
-                        s["score"] = 0.0
+                        last_ok = s["last_correct_time"]
+                        if last_ok is None or (now - last_ok) > POSE_GRACE_SECS:
+                            s["pose_hold_start"] = None
+                            s["last_correct_time"] = None
+                            s["score"] = 0.0
 
                     if s["score"] >= POSE_HOLD_NEEDED:
                         s["phase"] = "done"
                     elif elapsed >= REQUIRED_TIME:
                         s["attempt"] += 1
                         s.update(phase="countdown", phase_start=now,
-                                 score=0.0, pose_hold_start=None)
+                                 score=0.0, pose_hold_start=None,
+                                 last_correct_time=None)
                 else:
                     # Movement mode: accumulate dancing time
                     delta = score_movement(current_pos, s["prev_positions"])

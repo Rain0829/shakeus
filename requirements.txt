@@ -6,3 +6,4 @@ schedule
 pygame
 scikit-learn
 numpy
+google-generativeai
