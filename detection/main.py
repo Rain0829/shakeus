@@ -1,13 +1,14 @@
 """
 detection/main.py
 ─────────────────
-Person B's standalone test loop. Run from the project root:
+Dance alarm — runs from the project root:
 
     python detection/main.py
 
-Uses pygame for audio (no Chromecast/Flask needed).
-Songs are read from assets/songs/. Model and classifier
-paths come from config.py so they stay in sync with the team.
+Modes are inferred from config.py SONGS list:
+  pose_label = None            → general movement (any dancing clears alarm)
+  pose_label = "low_cortisol" → dynamic mode (wrist burst detection)
+  pose_label = anything else  → static mode (hold that ML pose for N seconds)
 """
 
 import cv2
@@ -35,6 +36,25 @@ from config import (
 # ─────────────────────────────────────────
 FAIL_DISPLAY_SECS = 2
 PASS_DISPLAY_SECS = 3
+
+# Dynamic mode constants (low_cortisol)
+DYN_WINDOW          = 2.0   # rolling window in seconds
+DYN_BURSTS_NEEDED   = 3     # wrist bursts needed inside the window
+DYN_BURST_THRESHOLD = 0.04  # min wrist displacement per frame to count as a burst
+
+# ─────────────────────────────────────────
+#  MODE INFERENCE
+# ─────────────────────────────────────────
+DYNAMIC_LABELS = {"low_cortisol"}   # add more dynamic poses here if needed
+
+def get_mode(song):
+    """Infer detection mode from pose_label."""
+    lbl = song.get("pose_label")
+    if lbl is None:
+        return "movement"
+    if lbl in DYNAMIC_LABELS:
+        return "dynamic"
+    return "static"
 
 # ─────────────────────────────────────────
 #  LANDMARK CONFIG
@@ -101,7 +121,7 @@ def predict_pose(landmarks):
     return label_enc.classes_[idx], probs[idx]
 
 # ─────────────────────────────────────────
-#  AUDIO INIT (pygame — no Chromecast needed)
+#  AUDIO
 # ─────────────────────────────────────────
 pygame.mixer.init()
 
@@ -120,8 +140,9 @@ def stop_song():
 #  PICK RANDOM SONG
 # ─────────────────────────────────────────
 current_song = random.choice(SONGS)
-print(f"\nSelected song: {current_song['name']}")
-print(f"Mode: {'POSE — ' + current_song['pose_label'] if current_song['pose_label'] else 'ANY MOVEMENT'}\n")
+current_mode = get_mode(current_song)
+print(f"\nSelected song : {current_song['name']}")
+print(f"Mode          : {current_mode}\n")
 
 # ─────────────────────────────────────────
 #  CAMERA
@@ -140,8 +161,12 @@ state = {
     "result":          None,
     "attempt":         0,
     "alarm_cleared":   False,
+    # static mode
     "pose_hold_start": None,
     "pose_hold_secs":  0.0,
+    # dynamic mode
+    "burst_times":     [],
+    "prev_wrists":     None,
 }
 
 # ─────────────────────────────────────────
@@ -186,6 +211,24 @@ def start_countdown(s, now):
     s["result"]          = None
     s["pose_hold_start"] = None
     s["pose_hold_secs"]  = 0.0
+    s["burst_times"]     = []
+    s["prev_wrists"]     = None
+
+def update_dynamic(s, landmarks, now):
+    """Track wrist movement bursts over a rolling time window."""
+    lw = landmarks[15]
+    rw = landmarks[16]
+    wrists = ((lw.x, lw.y), (rw.x, rw.y))
+    if s["prev_wrists"] is not None:
+        moved = (
+            dist(wrists[0], s["prev_wrists"][0]) > DYN_BURST_THRESHOLD or
+            dist(wrists[1], s["prev_wrists"][1]) > DYN_BURST_THRESHOLD
+        )
+        if moved:
+            s["burst_times"].append(now)
+    s["prev_wrists"] = wrists
+    s["burst_times"] = [t for t in s["burst_times"] if now - t <= DYN_WINDOW]
+    return len(s["burst_times"])
 
 # ─────────────────────────────────────────
 #  MAIN LOOP
@@ -220,8 +263,7 @@ with PoseLandmarker.create_from_options(options) as landmarker:
                 current_positions[name] = (lm.x, lm.y)
             predicted_label, pred_confidence = predict_pose(landmarks)
 
-        s         = state
-        song_mode = current_song["pose_label"]
+        s = state
 
         # ── Phase machine ──────────────────────────────────────────────────
         if s["phase"] == "waiting":
@@ -242,10 +284,11 @@ with PoseLandmarker.create_from_options(options) as landmarker:
         elif s["phase"] == "dancing":
             elapsed = now - s["phase_start"]
 
-            if song_mode is not None:
+            # ── STATIC: hold a specific pose ──────────────────────────────
+            if current_mode == "static":
                 correct = (
                     pose_detected
-                    and predicted_label == song_mode
+                    and predicted_label == current_song["pose_label"]
                     and pred_confidence >= POSE_CONFIDENCE
                 )
                 if correct:
@@ -255,18 +298,26 @@ with PoseLandmarker.create_from_options(options) as landmarker:
                 else:
                     s["pose_hold_start"] = None
                     s["pose_hold_secs"]  = 0.0
-
                 s["score"] = s["pose_hold_secs"]
 
                 if s["score"] >= POSE_HOLD_NEEDED:
-                    s["result"]      = "pass"
-                    s["phase"]       = "result"
-                    s["phase_start"] = now
+                    s["result"] = "pass"; s["phase"] = "result"; s["phase_start"] = now
                 elif elapsed >= REQUIRED_TIME:
                     s["attempt"] += 1
-                    s["result"]   = "fail"
-                    s["phase"]    = "result"
-                    s["phase_start"] = now
+                    s["result"] = "fail"; s["phase"] = "result"; s["phase_start"] = now
+
+            # ── DYNAMIC: repeated arm/wrist movement ──────────────────────
+            elif current_mode == "dynamic":
+                burst_count = update_dynamic(s, landmarks, now) if pose_detected else len(s["burst_times"])
+                s["score"] = burst_count
+
+                if burst_count >= DYN_BURSTS_NEEDED:
+                    s["result"] = "pass"; s["phase"] = "result"; s["phase_start"] = now
+                elif elapsed >= REQUIRED_TIME:
+                    s["attempt"] += 1
+                    s["result"] = "fail"; s["phase"] = "result"; s["phase_start"] = now
+
+            # ── MOVEMENT: any general dancing ─────────────────────────────
             else:
                 if pose_detected and s["prev_positions"]:
                     moving = sum(
@@ -277,20 +328,15 @@ with PoseLandmarker.create_from_options(options) as landmarker:
                     if moving >= JOINTS_NEEDED:
                         s["score"] += 1.0 / cap_fps
                     else:
-                        s["score"] = max(0.0, s["score"] - 0.5 / cap_fps)
-
+                        s["score"] = max(0.0, s["score"] - 0.3 / cap_fps)
                 s["prev_positions"] = current_positions.copy()
 
                 if elapsed >= REQUIRED_TIME:
                     if s["score"] >= SCORE_THRESHOLD:
-                        s["result"]      = "pass"
-                        s["phase"]       = "result"
-                        s["phase_start"] = now
+                        s["result"] = "pass"; s["phase"] = "result"; s["phase_start"] = now
                     else:
-                        s["attempt"]    += 1
-                        s["result"]      = "fail"
-                        s["phase"]       = "result"
-                        s["phase_start"] = now
+                        s["attempt"] += 1
+                        s["result"] = "fail"; s["phase"] = "result"; s["phase_start"] = now
 
         elif s["phase"] == "result":
             if s["result"] == "pass":
@@ -309,10 +355,12 @@ with PoseLandmarker.create_from_options(options) as landmarker:
             draw_landmarks(frame, detection.pose_landmarks[0], h, w)
 
         # ── Song + mode banner ─────────────────────────────────────────────
-        mode_tag = (
-            f"DO THE {current_song['pose_label'].upper().replace('_', ' ')} MOVE"
-            if song_mode else "DANCE TO CLEAR"
-        )
+        if current_mode == "static":
+            mode_tag = f"HOLD THE {current_song['pose_label'].upper().replace('_', ' ')} POSE"
+        elif current_mode == "dynamic":
+            mode_tag = f"DO THE {current_song['name'].upper()} MOVE"
+        else:
+            mode_tag = "DANCE TO CLEAR"
         shadow(frame, f"{current_song['name'].upper()}  |  {mode_tag}",
                (20, h - 20), 0.55, (255, 220, 0), 1)
 
@@ -337,47 +385,58 @@ with PoseLandmarker.create_from_options(options) as landmarker:
 
             shadow(frame, "ALARM ON", (20, 38), 0.8, (0,60,255), 2)
             if s["attempt"] > 0:
-                shadow(frame, f"attempt {s['attempt']+1}",
-                       (180, 38), 0.65, (200,150,0), 1)
+                shadow(frame, f"attempt {s['attempt']+1}", (180, 38), 0.65, (200,150,0), 1)
             shadow(frame, f"Time left: {time_left:.1f}s", (20, 68), 0.9, (0,220,255))
 
-            if song_mode:
-                shadow(frame, f"Hold the {song_mode.replace('_',' ').upper()} pose!",
-                       (20, 100), 0.75, (255, 220, 0), 2)
+            if current_mode == "static":
+                shadow(frame, f"Hold the {current_song['pose_label'].replace('_',' ').upper()} pose!",
+                       (20, 100), 0.75, (255,220,0), 2)
                 score_bar(frame, s["pose_hold_secs"], POSE_HOLD_NEEDED, 20, 112)
                 if pose_detected:
-                    color = (0, 220, 80) if predicted_label == song_mode else (0, 60, 255)
+                    col = (0,220,80) if predicted_label == current_song["pose_label"] else (0,60,255)
                     shadow(frame, f"Detected: {predicted_label} ({pred_confidence:.0%})",
-                           (20, 152), 0.65, color, 1)
+                           (20, 152), 0.65, col, 1)
+
+            elif current_mode == "dynamic":
+                burst_count = len(s["burst_times"])
+                shadow(frame, "Move your arms to the beat!",
+                       (20, 100), 0.75, (255,220,0), 2)
+                score_bar(frame, burst_count, DYN_BURSTS_NEEDED, 20, 112)
+                shadow(frame, f"Arm bursts: {burst_count}/{DYN_BURSTS_NEEDED}",
+                       (20, 152), 0.65, (0,220,255), 1)
+                if burst_count < 1:
+                    shadow(frame, "MOVE YOUR ARMS!", (w//2 - 155, h - 70), 1.2, (0,60,255), 3)
+
             else:
                 shadow(frame, "Score", (20, 100), 0.65, (200,200,200), 1)
                 score_bar(frame, s["score"], SCORE_THRESHOLD, 20, 108)
                 if s["score"] < SCORE_THRESHOLD * 0.4:
-                    shadow(frame, "DANCE HARDER!",
-                           (w//2 - 155, h - 70), 1.3, (0,60,255), 3)
+                    shadow(frame, "DANCE HARDER!", (w//2 - 155, h - 70), 1.3, (0,60,255), 3)
 
         elif s["phase"] == "result":
             overlay = frame.copy()
             cv2.rectangle(overlay, (0, h//2-90), (w, h//2+90), (0,0,0), -1)
             cv2.addWeighted(overlay, 0.6, frame, 0.4, 0, frame)
             if s["result"] == "pass":
-                shadow(frame, "ALARM CLEARED!",
-                       (w//2-230, h//2+15), 2.4, (0,230,80), 5)
+                shadow(frame, "ALARM CLEARED!", (w//2-230, h//2+15), 2.4, (0,230,80), 5)
                 shadow(frame, f"Attempts: {s['attempt']+1}  |  Song: {current_song['name']}",
                        (w//2-220, h//2+65), 0.85, (200,200,200), 2)
             else:
                 shadow(frame, "NOT ENOUGH — TRY AGAIN!",
                        (w//2-295, h//2+15), 1.6, (0,60,255), 4)
-                if song_mode:
-                    shadow(frame, f"Hold the {song_mode.replace('_',' ')} pose for {POSE_HOLD_NEEDED:.0f}s",
-                           (w//2-230, h//2+65), 0.75, (200,200,200), 2)
+                if current_mode == "static":
+                    shadow(frame, f"Hold the pose for {POSE_HOLD_NEEDED:.0f}s",
+                           (w//2-180, h//2+65), 0.75, (200,200,200), 2)
+                elif current_mode == "dynamic":
+                    shadow(frame, f"Keep moving! Need {DYN_BURSTS_NEEDED} arm bursts in {DYN_WINDOW:.0f}s",
+                           (w//2-250, h//2+65), 0.75, (200,200,200), 2)
                 else:
                     shadow(frame, f"Score: {s['score']:.2f} / {SCORE_THRESHOLD:.1f} needed",
                            (w//2-200, h//2+65), 0.85, (200,200,200), 2)
 
         shadow(frame, "ESC to force quit", (w-200, h-15), 0.5, (120,120,120), 1)
 
-        cv2.imshow("Dance Alarm — Test Mode", frame)
+        cv2.imshow("Dance Alarm", frame)
         if cv2.waitKey(1) & 0xFF == 27:
             stop_song()
             break
