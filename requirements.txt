@@ -3,3 +3,6 @@ mediapipe
 flask
 pychromecast
 schedule
+pygame
+scikit-learn
+numpy
