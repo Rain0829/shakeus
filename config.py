@@ -39,6 +39,6 @@ COUNTDOWN_SECS     = 3      # countdown before dancing phase begins
 
 
 # EARVIN's GEMINI API and ELEVEN LABS API
-GEMINI_API_KEY = "your_gemini_api_key_here"
-ELEVENLABS_API_KEY = "your_elevenlabs_api_key_here"
-ELEVENLABS_VOICE_ID = "your_chosen_voice_id_here"
+GEMINI_API_KEY = "AIzaSyA24bgSPtFMIQOFJidgIFTtEngYAbNuSo4"
+ELEVENLABS_API_KEY = "sk_f940f6c218c43c9bba0e003c306240ea66204e921cfbb270"
+ELEVENLABS_VOICE_ID = "gJx1vCzNCD1EQHT212Ls"
