@@ -3,12 +3,13 @@ import mediapipe as mp
 import urllib.request
 import os
 import time
-from config import MODEL_PATH
+from config import MODEL_PATH, USE_LITE_MODEL
 
+_BASE = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/"
 MODEL_URL = (
-    "https://storage.googleapis.com/mediapipe-models/"
-    "pose_landmarker/pose_landmarker_full/float16/latest/"
-    "pose_landmarker_full.task"
+    _BASE + "pose_landmarker_lite/float16/latest/pose_landmarker_lite.task"
+    if USE_LITE_MODEL else
+    _BASE + "pose_landmarker_full/float16/latest/pose_landmarker_full.task"
 )
 
 _KEYPOINTS = {11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28}

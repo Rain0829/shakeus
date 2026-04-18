@@ -1,2 +1,10 @@
+opencv-python
+mediapipe
+flask
+pychromecast
 schedule
+pygame
+scikit-learn
+numpy
+google-generativeai
 requests
