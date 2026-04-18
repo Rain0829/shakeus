@@ -127,11 +127,17 @@ pygame.mixer.init()
 
 def play_song(song):
     path = os.path.join(SONGS_DIR, song["file"])
-    if os.path.exists(path):
-        pygame.mixer.music.load(path)
-        pygame.mixer.music.play(-1)
-    else:
-        print(f"WARNING: audio file not found: {path}")
+    if not os.path.exists(path):
+        # fall back to any available MP3 in the folder
+        available = [f for f in os.listdir(SONGS_DIR) if f.endswith(".mp3")]
+        if not available:
+            print(f"WARNING: no MP3 files found in {SONGS_DIR}/ — music skipped")
+            return
+        fallback = random.choice(available)
+        path = os.path.join(SONGS_DIR, fallback)
+        print(f"Song '{song['file']}' not found, playing '{fallback}' instead")
+    pygame.mixer.music.load(path)
+    pygame.mixer.music.play(-1)
 
 def stop_song():
     pygame.mixer.music.stop()

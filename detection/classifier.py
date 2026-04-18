@@ -14,9 +14,23 @@ class PoseClassifier:
         self.labels = list(self._enc.classes_)
         print(f"Classifier loaded. Labels: {self.labels}")
 
+    @staticmethod
+    def _normalize(landmarks):
+        hip_x = (landmarks[23].x + landmarks[24].x) / 2
+        hip_y = (landmarks[23].y + landmarks[24].y) / 2
+        scale = abs(landmarks[11].x - landmarks[12].x) + 1e-6
+        row = []
+        for lm in landmarks:
+            row.extend([
+                (lm.x - hip_x) / scale,
+                (lm.y - hip_y) / scale,
+                lm.z,
+            ])
+        return row
+
     def predict(self, landmarks) -> tuple[str, float]:
         """Return (predicted_label, confidence) from a list of 33 landmarks."""
-        row   = [v for lm in landmarks for v in (lm.x, lm.y, lm.z)]
+        row   = self._normalize(landmarks)
         probs = self._clf.predict_proba([row])[0]
         idx   = int(np.argmax(probs))
         return self._enc.classes_[idx], float(probs[idx])

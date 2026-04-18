@@ -81,11 +81,21 @@ def draw_text_shadow(img, text, pos, scale, color, thickness=2):
     cv2.putText(img, text, pos, cv2.FONT_HERSHEY_SIMPLEX,
                 scale, color, thickness, cv2.LINE_AA)
 
-def landmarks_to_row(landmarks):
+def normalize_landmarks(landmarks):
+    hip_x = (landmarks[23].x + landmarks[24].x) / 2
+    hip_y = (landmarks[23].y + landmarks[24].y) / 2
+    scale = abs(landmarks[11].x - landmarks[12].x) + 1e-6
     row = []
     for lm in landmarks:
-        row.extend([lm.x, lm.y, lm.z])
+        row.extend([
+            (lm.x - hip_x) / scale,
+            (lm.y - hip_y) / scale,
+            lm.z,
+        ])
     return row
+
+def landmarks_to_row(landmarks):
+    return normalize_landmarks(landmarks)
 
 # ─────────────────────────────────────────
 #  COUNT EXISTING SAMPLES

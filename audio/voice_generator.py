@@ -2,11 +2,7 @@
 import google.generativeai as genai
 import requests
 import os
-import sys
-
-# Append parent directory to path to import config
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import GEMINI_API_KEY, ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID
+from config import GEMINI_API_KEY, ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID, SONGS_DIR
 
 class VoiceGenerator:
     def __init__(self):
@@ -43,8 +39,8 @@ class VoiceGenerator:
         response = requests.post(url, json=data, headers=headers)
         
         if response.status_code == 200:
-            # Save it in the audio directory so song_server.py can host it
-            filepath = os.path.join(os.path.dirname(__file__), output_filename)
+            # Save into SONGS_DIR so song_server.py can serve it over HTTP
+            filepath = os.path.join(SONGS_DIR, output_filename)
             with open(filepath, 'wb') as f:
                 f.write(response.content)
             return filepath
