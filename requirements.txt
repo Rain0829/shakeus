@@ -10,5 +10,3 @@ numpy
 google-genai
 fastapi
 uvicorn
-pytest
-pytest-cov
