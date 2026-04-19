@@ -16,7 +16,7 @@ def _prefer_local_config() -> None:
 
 
 _prefer_local_config()
-from config import MAC_IP, MAC_PORT
+from env_config import MAC_IP, MAC_PORT
 
 def trigger_now():
     url = f"http://{MAC_IP}:{MAC_PORT}/alarm/trigger"

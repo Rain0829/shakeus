@@ -2,7 +2,8 @@ import threading
 import random
 import time
 from flask import Flask
-from config import GOOGLE_HOME_IP, SONGS_BASE_URL, SONGS
+from config import SONGS
+from env_config import GOOGLE_HOME_IP, SONGS_BASE_URL
 from audio.speaker import Speaker
 from audio.song_server import register_routes
 from alarm.alarm_loop import run_alarm
@@ -18,10 +19,10 @@ def run_full_sequence(speaker, song_url, pose_label, song_name):
 
     # 1. Generate the audio files
     intro_text = voice_generator.generate_phrase("intro")
-    voice_generator.create_tts_audio(intro_text, "assets/songs/current_intro.mp3")
+    voice_generator.create_tts_audio(intro_text, "current_intro.mp3")
 
     outro_text = voice_generator.generate_phrase("outro")
-    voice_generator.create_tts_audio(outro_text, "assets/songs/current_outro.mp3")
+    voice_generator.create_tts_audio(outro_text, "current_outro.mp3")
 
     # 2. Play Intro
     # We use your existing SONGS_BASE_URL assuming the audio folder is served there

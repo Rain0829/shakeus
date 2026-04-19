@@ -23,11 +23,11 @@ from fastapi.staticfiles import StaticFiles
 warnings.filterwarnings("ignore", category=UserWarning)
 
 from config import (
-    WEBCAM_INDEX, SONGS, SONGS_DIR, SONGS_BASE_URL,
-    GOOGLE_HOME_IP, USE_CHROMECAST,
+    WEBCAM_INDEX, SONGS, SONGS_DIR, USE_CHROMECAST, VIDEO_STREAM_MAX_FPS,
     REQUIRED_TIME, SCORE_THRESHOLD, POSE_CONFIDENCE,
     POSE_HOLD_NEEDED, POSE_GRACE_SECS, COUNTDOWN_SECS,
 )
+from env_config import GOOGLE_HOME_IP, SONGS_BASE_URL
 
 if USE_CHROMECAST:
     import pychromecast
@@ -41,8 +41,9 @@ from detection.moves import landmarks_to_positions, score_movement
 from audio.voice_generator import VoiceGenerator
 
 # ── Shared state ──────────────────────────────────────────────────────────────
-_lock        = threading.Lock()
-_latest_jpeg = None
+_lock                   = threading.Lock()
+_latest_jpeg            = None
+_latest_jpeg_generation = 0  # incremented each new frame; MJPEG readers skip stale duplicates
 _state = {
     "phase":            "idle",   # idle | intro | waiting | countdown | dancing | outro | done
     "song":             "",
@@ -172,7 +173,7 @@ def _run_sequence(song: dict):
         vg = VoiceGenerator()
         intro_text = vg.generate_phrase("intro")
         print(f"[voice] Intro: {intro_text}")
-        intro_path = vg.create_tts_audio(intro_text, f"{SONGS_DIR}/current_intro.mp3")
+        intro_path = vg.create_tts_audio(intro_text, "current_intro.mp3")
         _play_tts(intro_path)
     except Exception as e:
         print(f"[voice intro skipped] {e}")
@@ -198,7 +199,7 @@ def _play_outro():
         vg = VoiceGenerator()
         outro_text = vg.generate_phrase("outro")
         print(f"[voice] Outro: {outro_text}")
-        outro_path = vg.create_tts_audio(outro_text, f"{SONGS_DIR}/current_outro.mp3")
+        outro_path = vg.create_tts_audio(outro_text, "current_outro.mp3")
         _play_tts(outro_path)
     except Exception as e:
         print(f"[voice outro skipped] {e}")
@@ -209,7 +210,7 @@ def _play_outro():
 
 # ── Camera + detection loop ───────────────────────────────────────────────────
 def _camera_loop():
-    global _latest_jpeg
+    global _latest_jpeg, _latest_jpeg_generation
     detector = PoseDetector()
     clf      = PoseClassifier()
     cap      = cv2.VideoCapture(WEBCAM_INDEX)
@@ -314,6 +315,7 @@ def _camera_loop():
         _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
         with _lock:
             _latest_jpeg = buf.tobytes()
+            _latest_jpeg_generation += 1
 
 
 # ── HUD drawing ───────────────────────────────────────────────────────────────
@@ -406,16 +408,47 @@ app.mount("/songs", StaticFiles(directory=SONGS_DIR), name="songs")
 
 
 # ── MJPEG stream ──────────────────────────────────────────────────────────────
+# Browser: <img src="/video"> — one long-lived GET, not JS fetch(). Server pushes
+# multipart JPEGs. We only yield when the camera produced a *new* frame (by
+# generation counter) and optionally cap FPS (VIDEO_STREAM_MAX_FPS) to save
+# bandwidth on ngrok/mobile vs the old fixed ~30 Hz resend of the same bytes.
 def _mjpeg_generator():
+    last_sent_gen = -1
+    last_send_time = 0.0
+    min_interval = (
+        (1.0 / VIDEO_STREAM_MAX_FPS) if VIDEO_STREAM_MAX_FPS and VIDEO_STREAM_MAX_FPS > 0 else 0.0
+    )
+
     while True:
         with _lock:
+            gen = _latest_jpeg_generation
             jpeg = _latest_jpeg
-        if jpeg:
-            yield (
-                b"--frame\r\n"
-                b"Content-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n"
-            )
-        time.sleep(0.033)
+
+        if not jpeg:
+            time.sleep(0.05)
+            continue
+
+        now = time.time()
+        if gen == last_sent_gen:
+            time.sleep(0.01)
+            continue
+
+        if min_interval and (now - last_send_time) < min_interval:
+            time.sleep(0.005)
+            continue
+
+        with _lock:
+            jpeg = _latest_jpeg
+            gen = _latest_jpeg_generation
+        if not jpeg or gen == last_sent_gen:
+            continue
+
+        last_sent_gen = gen
+        last_send_time = time.time()
+        yield (
+            b"--frame\r\n"
+            b"Content-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n"
+        )
 
 
 @app.get("/video")
@@ -527,6 +560,21 @@ HTML = """
   </div>
 
   <script>
+    let pollTimer = null;
+
+    function startStatusPolling() {
+      if (pollTimer != null) return;
+      pollTimer = setInterval(pollStatus, 1000);
+      pollStatus();
+    }
+
+    function stopStatusPolling() {
+      if (pollTimer != null) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+    }
+
     async function triggerAlarm() {
       document.getElementById('btn-trigger').disabled = true;
       const r = await fetch('/trigger', {method:'POST'});
@@ -534,15 +582,18 @@ HTML = """
       if (!d.ok) {
         alert(d.reason);
         document.getElementById('btn-trigger').disabled = false;
+        return;
       }
+      startStatusPolling();
     }
 
     async function stopAlarm() {
+      stopStatusPolling();
       await fetch('/stop', {method:'POST'});
       document.getElementById('btn-trigger').disabled = false;
     }
 
-    async function poll() {
+    async function pollStatus() {
       try {
         const r = await fetch('/status');
         const s = await r.json();
@@ -563,12 +614,9 @@ HTML = """
 
         const idle = phase === 'idle' || phase === 'done';
         document.getElementById('btn-trigger').disabled = !idle;
+        if (idle) stopStatusPolling();
       } catch(e) {}
     }
-
-    // Polling reduced to every 1000ms to stop network/video lag!
-    setInterval(poll, 1000);
-    poll();
   </script>
 </body>
 </html>
