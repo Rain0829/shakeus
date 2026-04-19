@@ -107,25 +107,47 @@ If your Google Home appears in the output, everything is wired up correctly.
 
 This repo includes a ready-to-use SonarScanner config in `sonar-project.properties`.
 
-1. Start a local SonarQube server on `http://localhost:9000`
-2. Install scanner + app dependencies if needed
+1. Start SonarQube with Docker Compose from the repo root
+
+```bash
+docker compose up -d
+```
+
+2. Wait for SonarQube to finish booting, then open `http://localhost:9000`
+
+```bash
+docker compose logs -f sonarqube
+```
+
+The first login is usually:
+
+- Username: `admin`
+- Password: `admin`
+
+3. Install scanner + app dependencies if needed
 
 ```bash
 python3 -m pip install -r requirements.txt
 brew install sonar-scanner
 ```
 
-3. Run the scan from the repo root
+4. Run the scan from the repo root
 
 ```bash
 sonar-scanner
 ```
 
-4. Open the SonarQube dashboard and inspect:
+5. Open the SonarQube dashboard and inspect:
 
 - Bugs
 - Code Smells
 - Duplications
+
+To stop the local stack later:
+
+```bash
+docker compose down
+```
 
 ### Useful debug commands
 
