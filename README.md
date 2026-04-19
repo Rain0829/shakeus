@@ -109,5 +109,50 @@ If your Google Home appears in the output, everything is wired up correctly.
 ## Run tests
 
 ```bash
-python -m pytest tests/ -v
+python3 -m pytest tests/ -v
+```
+
+## Run SonarQube locally
+
+This repo includes a ready-to-use SonarScanner config in `sonar-project.properties`.
+
+1. Start a local SonarQube server on `http://localhost:9000`
+2. Install scanner + test tooling if needed
+
+```bash
+python3 -m pip install -r requirements.txt
+brew install sonar-scanner
+```
+
+3. Generate a Python coverage report Sonar can import
+
+```bash
+python3 -m pytest tests/ --cov=. --cov-config=.coveragerc --cov-report=xml:coverage.xml -v
+```
+
+4. Run the scan from the repo root
+
+```bash
+sonar-scanner
+```
+
+5. Open the SonarQube dashboard and inspect:
+
+- Bugs
+- Code Smells
+- Coverage
+- Duplications
+
+### Useful debug commands
+
+Verbose scanner output:
+
+```bash
+sonar-scanner -X
+```
+
+Run just coverage without the full Sonar scan:
+
+```bash
+python3 -m pytest tests/ --cov=. --cov-config=.coveragerc --cov-report=term-missing --cov-report=xml:coverage.xml -v
 ```

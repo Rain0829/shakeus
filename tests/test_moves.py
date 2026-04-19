@@ -21,7 +21,9 @@ def make_lm(**overrides):
 # ── landmarks_to_positions ────────────────────────────────────────────────────
 
 def test_landmarks_to_positions_returns_named_joints():
-    lm  = make_lm(**{15: (0.3, 0.2), 16: (0.7, 0.2)})
+    lm  = make_lm()
+    lm[15] = FakeLandmark(0.3, 0.2)
+    lm[16] = FakeLandmark(0.7, 0.2)
     pos = landmarks_to_positions(lm)
     assert "left_wrist"  in pos
     assert "right_wrist" in pos

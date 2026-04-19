@@ -1,0 +1,16 @@
+[run]
+branch = True
+relative_files = True
+source =
+    alarm
+    audio
+    detection
+    ui
+    main.py
+    stream.py
+    config.py
+    env_config.py
+
+[report]
+omit =
+    tests/*
