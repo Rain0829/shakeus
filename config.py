@@ -7,10 +7,14 @@ ALARM_TIME = "07:30"             # 24hr format HH:MM
 
 # ── Camera ───────────────────────────────────────────────────────────────────
 
-WEBCAM_INDEX = 0                 # 0 = built-in Mac / first USB on Pi
+WEBCAM_INDEX = 1                 # 0 = built-in Mac / first USB on Pi
 
 # MJPEG /video to the browser: max updates per second per viewer (0 = no cap). Saves ngrok/CPU.
 VIDEO_STREAM_MAX_FPS = 15
+
+# When True, /video only sends the live MJPEG stream while an alarm is active (not idle/done).
+# When idle, /video returns a single small placeholder JPEG so ngrok is not saturated 24/7.
+VIDEO_STREAM_ONLY_WHEN_ALARM = True
 
 
 # ── Audio ────────────────────────────────────────────────────────────────────

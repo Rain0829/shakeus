@@ -4,19 +4,23 @@ stream.py — headless FastAPI server (Mac testing + Pi production)
 Run from project root:
     python stream.py
 
-Then open http://<ip>:8000 in a browser.
+Then open http://<ip>:8080 in a browser.
 """
 
 import threading
 import time
 import random
 import os
+
+import numpy as np
 import cv2
 import uvicorn
 import warnings
+from datetime import datetime
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
-from fastapi.responses import StreamingResponse, HTMLResponse, JSONResponse
+from fastapi import Body, FastAPI, HTTPException
+from fastapi.responses import StreamingResponse, HTMLResponse, JSONResponse, Response
+from pydantic import BaseModel, Field
 from fastapi.staticfiles import StaticFiles
 
 # Suppress the annoying MediaPipe Protobuf deprecation warnings
@@ -24,6 +28,7 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 from config import (
     WEBCAM_INDEX, SONGS, SONGS_DIR, USE_CHROMECAST, VIDEO_STREAM_MAX_FPS,
+    VIDEO_STREAM_ONLY_WHEN_ALARM,
     REQUIRED_TIME, SCORE_THRESHOLD, POSE_CONFIDENCE,
     POSE_HOLD_NEEDED, POSE_GRACE_SECS, COUNTDOWN_SECS,
 )
@@ -56,6 +61,85 @@ _state = {
     "prev_positions":   {},
     "cap_fps":          30.0,
 }
+
+# ── Remote schedule (alarm at HH:MM local, or one-shot timer) ────────────────
+_schedule_lock = threading.Lock()
+_schedule = {
+    "kind": None,              # None | "alarm" | "timer"
+    "song_file": None,         # optional; must match SONGS[].file
+    "alarm_h": None,
+    "alarm_m": None,
+    "timer_until": None,       # time.monotonic() deadline for timer
+    "last_alarm_fired": None,  # date — daily alarm fires once per calendar day
+}
+_scheduler_stop = threading.Event()
+
+
+def _song_by_file(song_file: str | None):
+    """Return song dict from SONGS, or None if not found."""
+    if not song_file:
+        return None
+    for s in SONGS:
+        if s["file"] == song_file:
+            return s
+    return None
+
+
+def _pick_song(song_file: str | None):
+    """Resolve optional file name to a song dict; random if missing/invalid."""
+    s = _song_by_file(song_file)
+    if s:
+        return s
+    return random.choice(SONGS)
+
+
+def _fire_alarm_from_schedule():
+    """Start alarm sequence if idle; used by scheduler."""
+    song = None
+    with _schedule_lock:
+        song = _pick_song(_schedule.get("song_file"))
+    with _lock:
+        if _state["phase"] not in ("idle", "done"):
+            return
+    threading.Thread(target=_run_sequence, args=(song,), daemon=True).start()
+
+
+def _scheduler_loop():
+    """Wake periodically; fire timer or daily clock alarm."""
+    while not _scheduler_stop.wait(timeout=0.5):
+        with _schedule_lock:
+            kind = _schedule["kind"]
+            song_file = _schedule.get("song_file")
+            timer_until = _schedule.get("timer_until")
+            alarm_h = _schedule.get("alarm_h")
+            alarm_m = _schedule.get("alarm_m")
+            last_fired = _schedule.get("last_alarm_fired")
+
+        if kind == "timer" and timer_until is not None:
+            if time.monotonic() >= timer_until:
+                sf = None
+                with _schedule_lock:
+                    if _schedule.get("kind") != "timer":
+                        continue
+                    sf = _schedule.get("song_file")
+                    _schedule["kind"] = None
+                    _schedule["timer_until"] = None
+                    _schedule["song_file"] = None
+                song = _pick_song(sf)
+                with _lock:
+                    if _state["phase"] not in ("idle", "done"):
+                        continue
+                threading.Thread(target=_run_sequence, args=(song,), daemon=True).start()
+            continue
+
+        if kind == "alarm" and alarm_h is not None and alarm_m is not None:
+            now = datetime.now()
+            if now.hour == alarm_h and now.minute == alarm_m and now.second <= 1:
+                today = now.date()
+                if last_fired != today:
+                    with _schedule_lock:
+                        _schedule["last_alarm_fired"] = today
+                    _fire_alarm_from_schedule()
 
 
 # ── Audio helpers ─────────────────────────────────────────────────────────────
@@ -401,17 +485,43 @@ def _draw_hud(frame, s, pred_label, pred_conf, now):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     threading.Thread(target=_camera_loop, daemon=True).start()
+    threading.Thread(target=_scheduler_loop, daemon=True).start()
     yield
+    _scheduler_stop.set()
 
 app = FastAPI(lifespan=lifespan)
-app.mount("/songs", StaticFiles(directory=SONGS_DIR), name="songs")
-
+# NOTE: Do not mount StaticFiles at /songs before the JSON route GET /songs — the mount
+# would swallow GET /songs. Mount is registered after list_songs() below.
 
 # ── MJPEG stream ──────────────────────────────────────────────────────────────
 # Browser: <img src="/video"> — one long-lived GET, not JS fetch(). Server pushes
 # multipart JPEGs. We only yield when the camera produced a *new* frame (by
 # generation counter) and optionally cap FPS (VIDEO_STREAM_MAX_FPS) to save
 # bandwidth on ngrok/mobile vs the old fixed ~30 Hz resend of the same bytes.
+#
+# If VIDEO_STREAM_ONLY_WHEN_ALARM: no multipart stream while phase is idle/done — see video().
+
+_STANDBY_JPEG: bytes | None = None
+
+
+def _get_standby_jpeg() -> bytes:
+    """Single static frame when live stream is off (saves ngrok bandwidth)."""
+    global _STANDBY_JPEG
+    if _STANDBY_JPEG is None:
+        img = np.full((240, 480, 3), (42, 40, 38), dtype=np.uint8)
+        cv2.putText(
+            img, "Camera stream only during alarm", (20, 95),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (210, 205, 200), 2, cv2.LINE_AA,
+        )
+        cv2.putText(
+            img, "(idle — low bandwidth mode)", (20, 135),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.55, (170, 165, 160), 2, cv2.LINE_AA,
+        )
+        _, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 70])
+        _STANDBY_JPEG = buf.tobytes()
+    return _STANDBY_JPEG
+
+
 def _mjpeg_generator():
     last_sent_gen = -1
     last_send_time = 0.0
@@ -420,6 +530,11 @@ def _mjpeg_generator():
     )
 
     while True:
+        if VIDEO_STREAM_ONLY_WHEN_ALARM:
+            with _lock:
+                if _state["phase"] in ("idle", "done"):
+                    break
+
         with _lock:
             gen = _latest_jpeg_generation
             jpeg = _latest_jpeg
@@ -453,6 +568,11 @@ def _mjpeg_generator():
 
 @app.get("/video")
 def video():
+    if VIDEO_STREAM_ONLY_WHEN_ALARM:
+        with _lock:
+            phase = _state["phase"]
+        if phase in ("idle", "done"):
+            return Response(content=_get_standby_jpeg(), media_type="image/jpeg")
     return StreamingResponse(
         _mjpeg_generator(),
         media_type="multipart/x-mixed-replace; boundary=frame",
@@ -460,15 +580,127 @@ def video():
 
 
 # ── Control endpoints ─────────────────────────────────────────────────────────
+class TriggerBody(BaseModel):
+    song_file: str | None = None
+
+
+def _resolve_trigger_song(song_file: str | None):
+    if song_file:
+        s = _song_by_file(song_file)
+        if not s:
+            raise HTTPException(status_code=400, detail=f"Unknown song_file: {song_file}")
+        return s
+    return random.choice(SONGS)
+
+
+class ScheduleAlarmBody(BaseModel):
+    time: str = Field(..., description="Local time HH:MM (24h)")
+    song_file: str | None = None
+
+
+class ScheduleTimerBody(BaseModel):
+    seconds: int = Field(..., ge=1, le=86400)
+    song_file: str | None = None
+
+
+def _parse_hhmm(t: str) -> tuple[int, int]:
+    parts = t.strip().split(":")
+    if len(parts) != 2:
+        raise HTTPException(status_code=400, detail="time must be HH:MM")
+    h, m = int(parts[0]), int(parts[1])
+    if not (0 <= h <= 23 and 0 <= m <= 59):
+        raise HTTPException(status_code=400, detail="invalid time")
+    return h, m
+
+
+@app.get("/songs")
+def list_songs():
+    return [
+        {"name": s["name"], "file": s["file"], "pose_label": s["pose_label"]}
+        for s in SONGS
+    ]
+
+
+app.mount("/songs", StaticFiles(directory=SONGS_DIR), name="songs")
+
+
 @app.post("/trigger")
-def trigger():
+def trigger(body: TriggerBody | None = Body(default=None)):
     with _lock:
         if _state["phase"] not in ("idle", "done"):
             return JSONResponse({"ok": False, "reason": "alarm already running"})
 
-    song = random.choice(SONGS)
+    song_file = body.song_file if body else None
+    song = _resolve_trigger_song(song_file)
     threading.Thread(target=_run_sequence, args=(song,), daemon=True).start()
-    return {"ok": True, "song": song["name"], "pose_label": song["pose_label"]}
+    return {"ok": True, "song": song["name"], "pose_label": song["pose_label"], "file": song["file"]}
+
+
+@app.post("/schedule/alarm")
+def schedule_alarm(body: ScheduleAlarmBody):
+    if body.song_file and not _song_by_file(body.song_file):
+        raise HTTPException(status_code=400, detail=f"Unknown song_file: {body.song_file}")
+    h, m = _parse_hhmm(body.time)
+    with _schedule_lock:
+        _schedule.update(
+            kind="alarm",
+            alarm_h=h,
+            alarm_m=m,
+            song_file=body.song_file,
+            timer_until=None,
+            last_alarm_fired=None,
+        )
+    return {"ok": True, "kind": "alarm", "time": f"{h:02d}:{m:02d}", "song_file": body.song_file}
+
+
+@app.post("/schedule/timer")
+def schedule_timer(body: ScheduleTimerBody):
+    if body.song_file and not _song_by_file(body.song_file):
+        raise HTTPException(status_code=400, detail=f"Unknown song_file: {body.song_file}")
+    until = time.monotonic() + float(body.seconds)
+    with _schedule_lock:
+        _schedule.update(
+            kind="timer",
+            alarm_h=None,
+            alarm_m=None,
+            song_file=body.song_file,
+            timer_until=until,
+            last_alarm_fired=None,
+        )
+    return {"ok": True, "kind": "timer", "seconds": body.seconds, "song_file": body.song_file}
+
+
+@app.post("/schedule/cancel")
+def schedule_cancel():
+    with _schedule_lock:
+        _schedule.update(
+            kind=None,
+            song_file=None,
+            alarm_h=None,
+            alarm_m=None,
+            timer_until=None,
+            last_alarm_fired=None,
+        )
+    return {"ok": True}
+
+
+@app.get("/schedule")
+def schedule_status():
+    with _schedule_lock:
+        k = _schedule["kind"]
+        out = {"kind": k, "song_file": _schedule.get("song_file")}
+        if k == "alarm" and _schedule.get("alarm_h") is not None:
+            h, m = _schedule["alarm_h"], _schedule["alarm_m"]
+            out["time"] = f"{h:02d}:{m:02d}"
+            out["timer_remaining_sec"] = None
+        elif k == "timer" and _schedule.get("timer_until") is not None:
+            rem = max(0.0, _schedule["timer_until"] - time.monotonic())
+            out["timer_remaining_sec"] = round(rem, 1)
+            out["time"] = None
+        else:
+            out["time"] = None
+            out["timer_remaining_sec"] = None
+    return JSONResponse(out)
 
 
 @app.post("/stop")
@@ -484,6 +716,48 @@ def status():
     with _lock:
         s = {k: v for k, v in _state.items() if k not in ("prev_positions",)}
     return JSONResponse(s)
+
+
+# Same control endpoints under /api/* so the React app can talk to shakeus directly
+# (e.g. VITE_API_BASE_URL=http://127.0.0.1:8080) without the website proxy.
+@app.get("/api/songs")
+def api_songs():
+    return list_songs()
+
+
+@app.post("/api/trigger")
+def api_trigger(body: TriggerBody | None = Body(default=None)):
+    return trigger(body)
+
+
+@app.post("/api/schedule/alarm")
+def api_schedule_alarm(body: ScheduleAlarmBody):
+    return schedule_alarm(body)
+
+
+@app.post("/api/schedule/timer")
+def api_schedule_timer(body: ScheduleTimerBody):
+    return schedule_timer(body)
+
+
+@app.post("/api/schedule/cancel")
+def api_schedule_cancel():
+    return schedule_cancel()
+
+
+@app.get("/api/schedule")
+def api_schedule_status():
+    return schedule_status()
+
+
+@app.post("/api/stop")
+def api_stop():
+    return stop()
+
+
+@app.get("/api/status")
+def api_status():
+    return status()
 
 
 # ── Dashboard HTML ────────────────────────────────────────────────────────────
@@ -561,6 +835,24 @@ HTML = """
 
   <script>
     let pollTimer = null;
+    let lastFeedStreamOn = null;
+
+    // Poll /status so the camera img switches between placeholder JPEG and live MJPEG
+    // when alarm starts/stops (VIDEO_STREAM_ONLY_WHEN_ALARM). No video bytes while idle.
+    (function feedSync() {
+      setInterval(async () => {
+        try {
+          const r = await fetch('/status');
+          const s = await r.json();
+          const phase = s.phase || 'idle';
+          const streamOn = !(phase === 'idle' || phase === 'done');
+          if (lastFeedStreamOn === null || streamOn !== lastFeedStreamOn) {
+            document.getElementById('feed').src = '/video?t=' + Date.now();
+            lastFeedStreamOn = streamOn;
+          }
+        } catch (e) {}
+      }, 1500);
+    })();
 
     function startStatusPolling() {
       if (pollTimer != null) return;
@@ -629,4 +921,4 @@ def dashboard():
 
 
 if __name__ == "__main__":
-    uvicorn.run("stream:app", host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run("stream:app", host="0.0.0.0", port=8080, reload=False)
