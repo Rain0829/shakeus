@@ -25,10 +25,10 @@ USE_CHROMECAST = True
 #        pose_label="x"  → must hold that ML-classified pose
 SONGS = [
     {"name": "Scuba",         "file": "scuba.mp3",         "pose_label": "scuba"},
-    {"name": "Low Cortisol",  "file": "low_cortisol.mp3",  "pose_label": "low_cortisol"},
+    {"name": "Gangnam Style", "file": "gangnam_style.mp3", "pose_label": "gangnam_style"},
+    {"name": "Low Cortisol",  "file": "low_cortisol.mp3",  "pose_label": None},
     {"name": "Woah",          "file": "woah.mp3",          "pose_label": None},
     {"name": "Lush Life",     "file": "lush_life.mp3",     "pose_label": None},
-    {"name": "Gangnam Style", "file": "gangnam_style.mp3", "pose_label": None},
     {"name": "Whip",          "file": "whip.mp3",          "pose_label": None},
 ]
 
@@ -49,9 +49,9 @@ MOVEMENT_THRESHOLD = 0.02   # min joint displacement per frame to count as movem
 JOINTS_NEEDED = 3           # how many joints must move per frame to score
 SCORE_THRESHOLD = 3.0       # seconds of movement needed to pass (movement mode)
 REQUIRED_TIME = 10          # seconds per attempt before pass/fail
-POSE_CONFIDENCE = 0.7       # classifier confidence needed to count a pose hit
-POSE_HOLD_NEEDED = 2.0    # seconds of correct pose needed to dismiss (pose mode)
-POSE_GRACE_SECS = 0.3     # seconds of bad frames tolerated before hold resets
+POSE_CONFIDENCE = 0.35       # classifier confidence needed to count a pose hit
+POSE_HOLD_NEEDED = 3.0    # seconds of correct pose needed to dismiss (pose mode)
+POSE_GRACE_SECS = 1.0     # seconds of bad frames tolerated before hold resets
 COUNTDOWN_SECS = 3        # countdown before dancing phase begins
 
 

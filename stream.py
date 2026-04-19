@@ -97,7 +97,7 @@ def _play_song(song_file: str):
             print(f"[chromecast] Connecting to {GOOGLE_HOME_IP} for song...")
             _chromecast = pychromecast.Chromecast(GOOGLE_HOME_IP)
             _chromecast.wait()
-            _chromecast.set_volume(0.8) # Ensure it isn't muted!
+            _chromecast.set_volume(0.4) # Ensure it isn't muted!
             mc = _chromecast.media_controller
             print(f"[chromecast] Sending URL: {url}")
             mc.play_media(url, "audio/mp3")
