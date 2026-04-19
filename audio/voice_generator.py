@@ -1,19 +1,12 @@
 import os
 from pathlib import Path
-
 import requests
-from google import genai
 
 from config import SONGS_DIR
 from env_config import (
-    GEMINI_API_KEY,
-    GEMINI_MODEL,
     ELEVENLABS_API_KEY,
     ELEVENLABS_VOICE_ID,
 )
-
-# Default Gemini Developer API model (override with GEMINI_MODEL in .env)
-_DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
 
 _ELEVEN_TTS_URL = "https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
 _ELEVEN_TIMEOUT_SEC = 120
@@ -31,33 +24,43 @@ def _resolve_output_path(output_filename: str) -> str:
 
 
 class VoiceGenerator:
+    # Class-level counters to ensure we iterate to the next sentence 
+    # even when stream.py creates a new instance of this class!
+    _intro_index = 0
+    _outro_index = 0
+
+    _INTROS = [
+        "Wake up! Start dancing, or I will play Baby Shark on repeat.",
+        "Good morning! The floor is lava, so get out of bed and show me your moves.",
+        "Get up! Gravity is not an excuse. Let's get this morning party started.",
+        "Morning! I know you are tired, but it is time to shake that bedhead.",
+        "Rise and shine! Your bed misses you already, but it's time to sweat."
+    ]
+
+    _OUTROS = [
+        "Alarm cleared! I have seen better dancing from a penguin, but you pass.",
+        "Mission accomplished. You can stop flailing now. Go drink some coffee.",
+        "Boom! The music is off. Now go conquer the world.",
+        "You survived the morning dance battle. You are free to go.",
+        "Okay, okay, I am turning off the music. Great job, now get out of here!"
+    ]
+
     def __init__(self):
-        self._client = genai.Client(api_key=GEMINI_API_KEY)
+        # Removed Gemini initialization to bypass the 403 API blocked errors
+        pass
 
     def generate_phrase(self, phase="intro"):
+        """Grabs the next hardcoded sentence in the loop."""
         if phase == "intro":
-            prompt = (
-                "Write a short, punchy 1-sentence intro to wake someone up and hype them up "
-                "for a morning dance routine. Sound like an energetic DJ. No emojis."
-            )
+            text = self._INTROS[VoiceGenerator._intro_index]
+            # Increment and wrap back to 0 if we hit the end of the list
+            VoiceGenerator._intro_index = (VoiceGenerator._intro_index + 1) % len(self._INTROS)
+            return text
         else:
-            prompt = (
-                "Write a short, punchy 1-sentence congratulation for finishing a morning dance break. "
-                "Tell them to have a great day. No emojis."
-            )
-
-        model = GEMINI_MODEL or _DEFAULT_GEMINI_MODEL
-        response = self._client.models.generate_content(
-            model=model,
-            contents=prompt,
-        )
-        text = (response.text or "").strip()
-        if not text:
-            raise RuntimeError(
-                "Gemini returned no text (empty response, safety block, or API issue). "
-                "Check GEMINI_API_KEY and model availability."
-            )
-        return text
+            text = self._OUTROS[VoiceGenerator._outro_index]
+            # Increment and wrap back to 0 if we hit the end of the list
+            VoiceGenerator._outro_index = (VoiceGenerator._outro_index + 1) % len(self._OUTROS)
+            return text
 
     def create_tts_audio(self, text, output_filename):
         url = _ELEVEN_TTS_URL.format(voice_id=ELEVENLABS_VOICE_ID)

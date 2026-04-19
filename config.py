@@ -18,7 +18,7 @@ VIDEO_STREAM_MAX_FPS = 15
 SONGS_DIR = "assets/songs"
 
 # Set True on Pi to cast audio to Google Home; False plays locally via pygame
-USE_CHROMECAST = True
+USE_CHROMECAST = False
 
 
 # Songs: pose_label=None → any dancing clears alarm
@@ -35,7 +35,7 @@ SONGS = [
 
 # ── Detection model ───────────────────────────────────────────────────────────
 
-USE_LITE_MODEL = True
+USE_LITE_MODEL = False
 MODEL_PATH = (
     "detection/pose_landmarker_lite.task" if USE_LITE_MODEL
     else "detection/pose_landmarker_full.task"
