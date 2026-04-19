@@ -13,10 +13,14 @@ import random
 import os
 import cv2
 import uvicorn
+import warnings
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+
+# Suppress the annoying MediaPipe Protobuf deprecation warnings
+warnings.filterwarnings("ignore", category=UserWarning)
 
 from config import (
     WEBCAM_INDEX, SONGS, SONGS_DIR, SONGS_BASE_URL,
@@ -26,7 +30,7 @@ from config import (
 )
 
 if USE_CHROMECAST:
-    from audio.speaker import Speaker
+    import pychromecast
 else:
     import pygame
     pygame.mixer.init()
@@ -56,21 +60,58 @@ _state = {
 # ── Audio helpers ─────────────────────────────────────────────────────────────
 _chromecast = None
 
+def _loop_chromecast_song(url: str):
+    """Background thread to loop Chromecast music when it finishes."""
+    global _chromecast
+    
+    # Wait 5 seconds before we start checking so we don't accidentally 
+    # catch the temporary 'IDLE' state while the song first buffers!
+    time.sleep(5) 
+    
+    # Only loop if the user hasn't successfully turned off the alarm yet
+    while _state["phase"] in ("waiting", "countdown", "dancing"):
+        time.sleep(2)
+        if _chromecast:
+            try:
+                mc = _chromecast.media_controller
+                mc.update_status()
+                
+                # Check if it is IDLE specifically because the track 'FINISHED'
+                if mc.status.player_state == 'IDLE' and mc.status.idle_reason == 'FINISHED':
+                    print("[chromecast] Song finished! Looping back to start...")
+                    mc.play_media(url, "audio/mp3")
+                    mc.block_until_active()
+                    time.sleep(5) # Buffer delay before we resume checking
+            except Exception:
+                pass
+        else:
+            break
+
 def _play_song(song_file: str):
     """Start playing a song (non-blocking)."""
     global _chromecast
     if USE_CHROMECAST:
         try:
             url = f"{SONGS_BASE_URL}/{song_file}"
-            _chromecast = Speaker(GOOGLE_HOME_IP)
-            _chromecast.play(url)
+            print(f"[chromecast] Connecting to {GOOGLE_HOME_IP} for song...")
+            _chromecast = pychromecast.Chromecast(GOOGLE_HOME_IP)
+            _chromecast.wait()
+            _chromecast.set_volume(0.8) # Ensure it isn't muted!
+            mc = _chromecast.media_controller
+            print(f"[chromecast] Sending URL: {url}")
+            mc.play_media(url, "audio/mp3")
+            mc.block_until_active()
+            print("[chromecast] Beat dropped successfully. Looping enabled.")
+            
+            # Start the background watcher to loop the song if it ends
+            threading.Thread(target=_loop_chromecast_song, args=(url,), daemon=True).start()
         except Exception as e:
-            print(f"[chromecast] {e}")
+            print(f"[chromecast] Error: {e}")
     else:
         try:
             pygame.mixer.music.load(os.path.join(SONGS_DIR, song_file))
             pygame.mixer.music.set_volume(0.8)
-            pygame.mixer.music.play()
+            pygame.mixer.music.play(-1)  # -1 loops the music indefinitely
         except Exception as e:
             print(f"[audio] {e}")
 
@@ -79,12 +120,19 @@ def _play_tts(filepath: str):
     if USE_CHROMECAST:
         try:
             url = f"{SONGS_BASE_URL}/{os.path.basename(filepath)}"
-            cast = Speaker(GOOGLE_HOME_IP)
-            cast.play(url)
-            time.sleep(8)   # Chromecast can't easily be polled; fixed wait
-            cast.stop()
+            print(f"[chromecast tts] Connecting to {GOOGLE_HOME_IP} for voice...")
+            cast = pychromecast.Chromecast(GOOGLE_HOME_IP)
+            cast.wait()
+            cast.set_volume(0.9) # AI Voice needs to be loud and clear
+            mc = cast.media_controller
+            print(f"[chromecast tts] Sending URL: {url}")
+            mc.play_media(url, "audio/mp3")
+            mc.block_until_active()
+            print("[chromecast tts] Speaking...")
+            time.sleep(8)   # Wait for AI Voice to finish speaking
+            mc.stop()
         except Exception as e:
-            print(f"[chromecast tts] {e}")
+            print(f"[chromecast tts] Error: {e}")
     else:
         try:
             pygame.mixer.music.load(filepath)
@@ -100,7 +148,8 @@ def _stop_song():
     if USE_CHROMECAST:
         if _chromecast:
             try:
-                _chromecast.stop()
+                _chromecast.media_controller.stop()
+                print("[chromecast] Audio stopped.")
             except Exception:
                 pass
             _chromecast = None
@@ -123,7 +172,7 @@ def _run_sequence(song: dict):
         vg = VoiceGenerator()
         intro_text = vg.generate_phrase("intro")
         print(f"[voice] Intro: {intro_text}")
-        intro_path = vg.create_tts_audio(intro_text, "current_intro.mp3")
+        intro_path = vg.create_tts_audio(intro_text, f"{SONGS_DIR}/current_intro.mp3")
         _play_tts(intro_path)
     except Exception as e:
         print(f"[voice intro skipped] {e}")
@@ -149,7 +198,7 @@ def _play_outro():
         vg = VoiceGenerator()
         outro_text = vg.generate_phrase("outro")
         print(f"[voice] Outro: {outro_text}")
-        outro_path = vg.create_tts_audio(outro_text, "current_outro.mp3")
+        outro_path = vg.create_tts_audio(outro_text, f"{SONGS_DIR}/current_outro.mp3")
         _play_tts(outro_path)
     except Exception as e:
         print(f"[voice outro skipped] {e}")
@@ -517,7 +566,8 @@ HTML = """
       } catch(e) {}
     }
 
-    setInterval(poll, 500);
+    // Polling reduced to every 1000ms to stop network/video lag!
+    setInterval(poll, 1000);
     poll();
   </script>
 </body>
